@@ -9,11 +9,11 @@ from pathlib import Path
 
 import streamlit as st
 
-from config import settings
-from models import UserRequest
-from report_generator import generate_report_files
-from utils import new_request_id, setup_logging
-from workflow import run_report_workflow
+from backend.config import settings
+from backend.models import UserRequest
+from backend.report_generator import generate_report_files
+from backend.utils import new_request_id, setup_logging
+from backend.workflow import run_report_workflow
 
 setup_logging(settings.log_level)
 

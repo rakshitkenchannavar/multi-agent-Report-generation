@@ -10,17 +10,6 @@ Responsibilities:
   - Produce section-level insights and executive overview
   - Incorporate validator improvement notes on retry
   - Return structured AnalysisResult
-  
-Business Summary: Makes sense of the raw research. 
-It doesn't just copy-paste facts; 
-it finds trends, pros/cons, and risks. 
-This is where real business value is added.
-Logic: Takes ResearchResult and the Plan. 
-Instructs the LLM to interpret the data, extract key findings, 
-identify SWOT (Strengths, Weaknesses, Opportunities, Threats), 
-and map insights to specific report sections. 
-If the Validator rejected it previously, 
-it injects "improvement notes" so the LLM knows exactly what to fix.
 """
 
 from __future__ import annotations
@@ -49,7 +38,7 @@ AGENT_NAME = "analyst"
 
 
 def get_analyst_agent() -> Any:
-    """Create the Analyst agent (Gemini / configured provider)."""
+    """Create the Analyst agent."""
     return create_chat_agent(
         name=AGENT_NAME,
         instructions=ANALYST_SYSTEM,
@@ -94,7 +83,6 @@ def _normalize_analysis(
 
     if analysis.factors is None:
         from models import SWOTOrFactors
-
         analysis.factors = SWOTOrFactors()
 
     if analysis.key_findings:
@@ -115,16 +103,6 @@ async def run_analyst(
 ) -> AnalysisResult:
     """
     Analyze research results and produce AnalysisResult.
-
-    Args:
-        research: Output from the researcher stage.
-        plan: Report plan (falls back to research.plan if omitted).
-        validation_feedback: Prior ValidationResult when retrying after FAIL.
-        attempt: 1-based attempt number (increments on validation retry).
-        agent: Optional agent instance.
-
-    Returns:
-        AnalysisResult
     """
     if research is None:
         raise ValueError("ResearchResult is required for analysis.")

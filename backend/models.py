@@ -21,7 +21,47 @@ from enum import Enum
 from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel, Field, field_validator
+# --- ADD THESE IMPORTS AT THE TOP OF models.py ---
+from sqlmodel import SQLModel, Field as SQLField
+from datetime import datetime, timezone
 
+# --- ADD THESE DB & AUTH MODELS ---
+class User(SQLModel, table=True):
+    """DB Model for Users."""
+    id: Optional[int] = SQLField(default=None, primary_key=True)
+    username: str = SQLField(unique=True, index=True)
+    email: str = SQLField(unique=True, index=True)
+    hashed_password: str
+    is_active: bool = SQLField(default=True)
+    profile_picture_base64: Optional[str] = SQLField(default=None) # NEW FIELD
+    created_at: datetime = SQLField(default_factory=lambda: datetime.now(timezone.utc))
+    
+class Report(SQLModel, table=True):
+    """DB Model for saved reports."""
+    id: Optional[int] = SQLField(default=None, primary_key=True)
+    user_id: int = SQLField(foreign_key="user.id", index=True)
+    title: str
+    query: str
+    markdown_content: str = SQLField(default="")
+    pdf_path: Optional[str] = SQLField(default=None)
+    docx_path: Optional[str] = SQLField(default=None)
+    created_at: datetime = SQLField(default_factory=lambda: datetime.now(timezone.utc))
+
+class UserRegister(BaseModel):
+    username: str
+    email: str
+    password: str
+
+class UserLogin(BaseModel):
+    email: str
+    password: str
+
+class Token(BaseModel):
+    access_token: str
+    token_type: str = "bearer"
+
+class TokenData(BaseModel):
+    user_id: Optional[int] = None
 
 # =============================================================================
 # Enums

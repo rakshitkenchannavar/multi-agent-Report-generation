@@ -1,7 +1,7 @@
 """
 workflow.py
 -----------
-Microsoft Agent Framework workflow orchestration.
+Workflow orchestration logic.
 
 Flow:
     User Query
@@ -14,9 +14,6 @@ Flow:
             ├─ FAIL (no retries)   → WorkflowFailure
             └─ PASS                → Report Writer
                                         → ReportDocument
-
-Uses MAF Executors + WorkflowBuilder when available, with a reliable
-async pipeline runner that always works for the FastAPI entrypoint.
 """
 
 from __future__ import annotations
@@ -74,7 +71,7 @@ class WorkflowRunResult:
 
 
 # =============================================================================
-# Shared per-run state (also used by MAF executors)
+# Shared per-run state
 # =============================================================================
 
 
@@ -118,7 +115,7 @@ def _failure(
 
 
 # =============================================================================
-# Core async pipeline (primary path used by the API)
+# Core async pipeline
 # =============================================================================
 
 
@@ -131,10 +128,8 @@ async def run_report_workflow(
 ) -> WorkflowRunResult:
     """
     Execute the full multi-agent report generation pipeline.
-
-    This is the main entrypoint called from FastAPI.
     """
-    # Lazy imports keep module import light and avoid circular refs
+    # Lazy imports to avoid circular references
     from agents.analyst import run_analyst, run_analyst_improvement
     from agents.input_analyzer import run_input_analyzer
     from agents.planner import run_planner
@@ -355,196 +350,3 @@ async def run_report_workflow(
             retries_used=state.retries_used,
             error_message=str(exc),
         )
-
-
-# =============================================================================
-# MAF WorkflowBuilder graph (optional / advanced)
-# =============================================================================
-
-
-def build_maf_workflow() -> Any:
-    """
-    Build a Microsoft Agent Framework workflow graph.
-
-    Mirrors the same stages as run_report_workflow().
-    Prefer run_report_workflow() from the API for a stable response envelope;
-    use this when you want native MAF orchestration / visualization.
-    """
-    try:
-        from agent_framework import (
-            Executor,
-            WorkflowBuilder,
-            WorkflowContext,
-            handler,
-        )
-    except ImportError as exc:
-        raise ImportError(
-            "Microsoft Agent Framework is required for build_maf_workflow(). "
-            "Install agent-framework / agent-framework-core."
-        ) from exc
-
-    from agents.analyst import run_analyst, run_analyst_improvement
-    from agents.input_analyzer import run_input_analyzer
-    from agents.planner import run_planner
-    from agents.report_writer import run_report_writer
-    from agents.researcher import run_researcher
-    from agents.validator import run_validator
-
-    # ----- Executors -----
-
-    class InputAnalyzerExec(Executor):
-        def __init__(self) -> None:
-            super().__init__(id="input_analyzer")
-
-        @handler
-        async def run(self, request: UserRequest, ctx: WorkflowContext) -> None:
-            log_event("maf_stage", stage="input_analyzer")
-            analyzed = await run_input_analyzer(request)
-            await ctx.send_message(analyzed)
-
-    class PlannerExec(Executor):
-        def __init__(self) -> None:
-            super().__init__(id="planner")
-
-        @handler
-        async def run(self, analyzed: AnalyzedRequest, ctx: WorkflowContext) -> None:
-            log_event("maf_stage", stage="planner")
-            plan = await run_planner(analyzed)
-            await ctx.send_message(plan)
-
-    class ResearcherExec(Executor):
-        def __init__(self) -> None:
-            super().__init__(id="researcher")
-
-        @handler
-        async def run(self, plan: ReportPlan, ctx: WorkflowContext) -> None:
-            log_event("maf_stage", stage="researcher")
-            research = await run_researcher(plan)
-            await ctx.send_message(research)
-
-    class AnalystExec(Executor):
-        def __init__(self) -> None:
-            super().__init__(id="analyst")
-
-        @handler
-        async def run(
-            self,
-            data: Union[ResearchResult, ValidationResult],
-            ctx: WorkflowContext,
-        ) -> None:
-            log_event("maf_stage", stage="analyst")
-            if isinstance(data, ValidationResult):
-                if data.analysis is None:
-                    raise ValueError("ValidationResult.analysis required for retry.")
-                analysis = await run_analyst_improvement(
-                    previous_analysis=data.analysis,
-                    validation=data,
-                )
-            else:
-                analysis = await run_analyst(research=data, plan=data.plan, attempt=1)
-            await ctx.send_message(analysis)
-
-    class ValidatorExec(Executor):
-        def __init__(self) -> None:
-            super().__init__(id="validator")
-
-        @handler
-        async def run(self, analysis: AnalysisResult, ctx: WorkflowContext) -> None:
-            log_event("maf_stage", stage="validator")
-            validation = await run_validator(
-                analysis=analysis,
-                plan=analysis.plan,
-                attempt=analysis.attempt,
-                pass_score=settings.validation_pass_score,
-                max_retries=settings.max_validation_retries,
-            )
-            await ctx.send_message(validation)
-
-    class ReportWriterExec(Executor):
-        def __init__(self) -> None:
-            super().__init__(id="report_writer")
-
-        @handler
-        async def run(self, validation: ValidationResult, ctx: WorkflowContext) -> None:
-            log_event("maf_stage", stage="report_writer")
-            if validation.analysis is None:
-                raise ValueError("ValidationResult.analysis is required to write report.")
-            retries_used = max(0, (validation.attempt or 1) - 1)
-            document = await run_report_writer(
-                analysis=validation.analysis,
-                validation=validation,
-                plan=validation.analysis.plan,
-                retries_used=retries_used,
-            )
-            await ctx.send_message(document)
-
-    class ValidationFailedExec(Executor):
-        def __init__(self) -> None:
-            super().__init__(id="validation_failed")
-
-        @handler
-        async def run(self, validation: ValidationResult, ctx: WorkflowContext) -> None:
-            log_event("maf_stage", stage="validation_failed")
-            fail = _failure(
-                stage="validator",
-                message="Validation failed after maximum retries.",
-                status=WorkflowStatus.VALIDATION_FAILED,
-                details=validation.summary,
-                validation=validation,
-                retries_used=max(0, (validation.attempt or 1) - 1),
-            )
-            await ctx.send_message(fail)
-
-    input_analyzer = InputAnalyzerExec()
-    planner = PlannerExec()
-    researcher = ResearcherExec()
-    analyst = AnalystExec()
-    validator = ValidatorExec()
-    report_writer = ReportWriterExec()
-    validation_failed = ValidationFailedExec()
-
-    def _is_pass(v: ValidationResult) -> bool:
-        return getattr(v, "status", None) == ValidationStatus.PASS
-
-    def _should_retry(v: ValidationResult) -> bool:
-        if _is_pass(v):
-            return False
-        attempt = getattr(v, "attempt", 1) or 1
-        return attempt <= settings.max_validation_retries
-
-    def _is_final_fail(v: ValidationResult) -> bool:
-        return (not _is_pass(v)) and (not _should_retry(v))
-
-    builder = (
-        WorkflowBuilder()
-        .set_start_executor(input_analyzer)
-        .add_edge(input_analyzer, planner)
-        .add_edge(planner, researcher)
-        .add_edge(researcher, analyst)
-        .add_edge(analyst, validator)
-        .add_edge(validator, report_writer, condition=_is_pass)
-        .add_edge(validator, analyst, condition=_should_retry)
-        .add_edge(validator, validation_failed, condition=_is_final_fail)
-    )
-
-    workflow = builder.build()
-    log_event("maf_workflow_built", max_retries=settings.max_validation_retries)
-    return workflow
-
-
-async def run_maf_workflow(request: Union[UserRequest, str]) -> Any:
-    """
-    Run the native MAF workflow graph.
-    Returns the last workflow event/message (framework-specific).
-    For API responses, prefer run_report_workflow().
-    """
-    if isinstance(request, str):
-        request = UserRequest(query=request)
-
-    workflow = build_maf_workflow()
-    # MAF API surface varies slightly by version
-    if hasattr(workflow, "run"):
-        return await workflow.run(request)
-    if hasattr(workflow, "run_async"):
-        return await workflow.run_async(request)
-    raise RuntimeError("MAF workflow object has no run/run_async method.")
