@@ -192,3 +192,38 @@ textarea::placeholder { color: var(--text-dim); }
 .full-width-table table {
     width: 100%;
 }
+
+.report-link {
+    color: var(--accent-blue);
+    cursor: pointer;
+    text-decoration: underline;
+}
+
+.report-link:hover {
+    color: #fff;
+}
+
+.password-wrapper {
+    position: relative;
+    width: 100%;
+}
+
+.password-wrapper input {
+    width: 100%;
+    padding-right: 45px;
+}
+
+.toggle-eye {
+    position: absolute;
+    right: 15px;
+    top: 50%;
+    transform: translateY(-50%);
+    cursor: pointer;
+    font-size: 16px;
+    user-select: none;
+    opacity: 0.7;
+}
+
+.toggle-eye:hover {
+    opacity: 1;
+}

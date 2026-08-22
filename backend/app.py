@@ -234,12 +234,24 @@ def get_user_reports(current_user: User = Depends(get_current_user), db: Session
 
 @app.get("/reports/{report_id}", tags=["reports"])
 def get_report_detail(report_id: int, current_user: User = Depends(get_current_user), db: Session = Depends(get_session)):
-    """Get single report detail."""
+    """Get single report detail. Admins can view any user's report."""
     report = db.get(Report, report_id)
-    if not report or report.user_id != current_user.id:
+    if not report:
         raise HTTPException(status_code=404, detail="Report not found")
-    return {"id": report.id, "title": report.title, "markdown": report.markdown_content, "query": report.query}
 
+    if report.user_id != current_user.id and current_user.username != "admin":
+        raise HTTPException(status_code=403, detail="You do not have access to this report.")
+
+    return {
+        "id": report.id,
+        "title": report.title,
+        "markdown": report.markdown_content,
+        "query": report.query,
+        "files": {
+            "pdf": os.path.basename(report.pdf_path) if report.pdf_path else None,
+            "docx": os.path.basename(report.docx_path) if report.docx_path else None,
+        },
+    }
 @app.get("/download/{filename}", tags=["reports"])
 async def download_file(filename: str, current_user: User = Depends(get_current_user)):
     """Download a generated report file."""
@@ -272,13 +284,21 @@ def get_all_reports_admin(current_user: User = Depends(get_current_user), db: Se
 
 @app.get("/admin/users", tags=["admin"])
 def get_all_users_admin(current_user: User = Depends(get_current_user), db: Session = Depends(get_session)):
-    """Admin observability: Get all registered users."""
+    """Admin: get all registered users."""
     if current_user.username != "admin":
         raise HTTPException(status_code=403, detail="Access denied")
-    
-    users = db.exec(select(User)).all()
-    return [{"id": u.id, "username": u.username, "email": u.email, "created_at": u.created_at.isoformat()} for u in users]
 
+    users = db.exec(select(User)).all()
+    return [
+        {
+            "id": u.id,
+            "username": u.username,
+            "email": u.email,
+            "is_admin": (u.username == "admin"),
+            "created_at": u.created_at.isoformat(),
+        }
+        for u in users
+    ]
 # -----------------------------------------------------------------------------
 # System & Health Routes
 # -----------------------------------------------------------------------------

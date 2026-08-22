@@ -103,3 +103,9 @@ scratch/
 *.spec
 .docker/
 docker-compose.override.yml
+
+# Database files
+*.db
+*.sqlite
+*.sqlite3
+backend/report_app.db

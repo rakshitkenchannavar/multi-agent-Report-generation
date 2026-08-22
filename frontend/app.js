@@ -17,6 +17,17 @@ function showView(viewName) {
     document.getElementById('nav-admin-users').classList.remove('active');
 }
 
+function togglePassword(inputId, iconEl) {
+    const input = document.getElementById(inputId);
+    if (input.type === 'password') {
+        input.type = 'text';
+        iconEl.textContent = '🙈';
+    } else {
+        input.type = 'password';
+        iconEl.textContent = '👁️';
+    }
+}
+
 // --- API HELPER ---
 async function api(endpoint, method = 'GET', body = null) {
     const token = localStorage.getItem('token');
@@ -35,6 +46,25 @@ async function api(endpoint, method = 'GET', body = null) {
         throw new Error(errorMsg);
     }
     try { return JSON.parse(text); } catch (e) { throw new Error("Invalid JSON response."); }
+}
+
+function formatDateAsIST(utcTimestamp) {
+    // Ensure the timestamp is treated as UTC even if 'Z' suffix is missing
+    var isoString = utcTimestamp;
+    if (!isoString.endsWith('Z') && !isoString.includes('+')) {
+        isoString = isoString + 'Z';
+    }
+    var date = new Date(isoString);
+    return date.toLocaleString('en-IN', {
+        timeZone: 'Asia/Kolkata',
+        year: 'numeric',
+        month: 'numeric',
+        day: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+        hour12: true
+    });
 }
 
 // --- SECURE FILE DOWNLOAD ---
@@ -170,9 +200,9 @@ function viewAdminTable() {
         for (var i = 0; i < reports.length; i++) {
             var r = reports[i];
             html += '<tr>';
-            html += '<td><span class="report-link" onclick="openReportDetail(' + r.id + ')">' + r.title + '</span></td>';
+            html += '<td><span class="report-link" onclick="loadReportById(' + r.id + ')">' + r.title + '</span></td>';
             html += '<td>' + r.username + '</td>';
-            html += '<td>' + new Date(r.created_at).toLocaleString() + '</td>';
+            html += '<td>' + formatDateAsIST(r.created_at) + '</td>';
             html += '</tr>';
         }
         tbody.innerHTML = html;
@@ -182,19 +212,36 @@ function viewAdminTable() {
 }
 async function loadReportById(id) {
     document.getElementById('admin-table-viewer').style.display = 'none';
+    document.getElementById('admin-users-viewer').style.display = 'none';
     document.getElementById('generating-view').style.display = 'none';
     document.getElementById('prompt-view').style.display = 'none';
     document.getElementById('report-viewer').style.display = 'block';
-    document.getElementById('viewer-title').style.display = 'none'; 
+    document.getElementById('viewer-title').style.display = 'none';
     document.getElementById('download-buttons').innerHTML = '';
+
+    document.getElementById('viewer-content').innerHTML = '<p style="color:#909296;">Loading report...</p>';
 
     try {
         const data = await api(`/reports/${id}`);
-        // Use linkifyHtml to make bare URLs clickable
         document.getElementById('viewer-content').innerHTML = linkifyHtml(marked.parse(data.markdown));
-    } catch (err) { console.error(err); }
-}
 
+        const btnContainer = document.getElementById('download-buttons');
+        btnContainer.innerHTML = '';
+
+        if (data.files) {
+            let downloadUrl = null;
+            let downloadName = null;
+            if (data.files.pdf) { downloadUrl = `/download/${data.files.pdf}`; downloadName = data.files.pdf; }
+            else if (data.files.docx) { downloadUrl = `/download/${data.files.docx}`; downloadName = data.files.docx; }
+
+            if (downloadUrl) {
+                btnContainer.innerHTML = `<button onclick="downloadFile('${downloadUrl}', '${downloadName}')" class="btn-dl" style="background: var(--accent-green); padding: 8px 20px; font-size: 14px; cursor: pointer; border: none; color: #fff; border-radius: 6px; font-weight: 600;">⬇ Download</button>`;
+            }
+        }
+    } catch (err) {
+        document.getElementById('viewer-content').innerHTML = '<p style="color:var(--accent-red);">Failed to load report: ' + err.message + '</p>';
+    }
+}
 // --- DASHBOARD LOGIC ---
 async function initDashboard() {
     showView('dashboard');
