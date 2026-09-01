@@ -55,7 +55,7 @@ class GeminiAgent:
         )
 
         last_error = None
-        for attempt in range(1, 6):  # up to 5 tries
+        for attempt in range(1, 7):  # up to 6 tries
             try:
                 response = client.models.generate_content(
                     model=self._model_name,
@@ -87,20 +87,39 @@ class GeminiAgent:
 
                 # Retry on rate limit (429)
                 if "429" in msg or "RESOURCE_EXHAUSTED" in msg:
-                    wait_s = 15 * attempt  # wait 15, 30, 45, 60s
+                    wait_s = 15 * attempt
                     logger.warning(
-                        "Gemini rate limit hit. Waiting %ds before retry (attempt %d/5)...",
-                        wait_s,
-                        attempt,
+                        "Gemini rate limit (429). Waiting %ds (attempt %d/6)...",
+                        wait_s, attempt,
                     )
                     time.sleep(wait_s)
                     continue
 
-                # Don't retry on other errors (like 404)
+                # Retry on server overload (503) and gateway errors
+                if any(c in msg for c in ("503", "UNAVAILABLE", "502", "504", "500", "INTERNAL")):
+                    wait_s = 4 * attempt          # 4, 8, 12, 16, 20s
+                    logger.warning(
+                        "Gemini unavailable (5xx). Waiting %ds (attempt %d/6)...",
+                        wait_s, attempt,
+                    )
+                    time.sleep(wait_s)
+                    continue
+
+                # Retry on transient network errors
+                if any(t in msg.lower() for t in ("timeout", "connection reset", "connection aborted", "deadline")):
+                    wait_s = 4 * attempt
+                    logger.warning(
+                        "Network error. Waiting %ds (attempt %d/6)...",
+                        wait_s, attempt,
+                    )
+                    time.sleep(wait_s)
+                    continue
+
+                # Permanent errors — fail fast (404, 401, 400)
                 raise
 
         raise RuntimeError(
-            f"Gemini rate limit exceeded after 5 retries: {last_error}"
+            f"Gemini unavailable after 6 retries: {last_error}"
         ) from last_error
 
     async def run(self, prompt: str) -> AgentResponse:
