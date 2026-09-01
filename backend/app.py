@@ -45,19 +45,29 @@ async def lifespan(app: FastAPI):
     """Startup / shutdown hooks."""
     create_db_and_tables()
     
-    # --- AUTO-CREATE DEFAULT ADMIN USER ---
+    # --- AUTO-CREATE DEFAULT ADMIN USER (from env) ---
     try:
         with Session(engine) as db:
-            admin_exists = db.exec(select(User).where(User.email == "admin@admin.com")).first()
+            admin_exists = db.exec(
+                select(User).where(User.email == settings.admin_email)
+            ).first()
             if not admin_exists:
-                hashed_pw = get_password_hash("admin123")
-                admin_user = User(username="admin", email="admin@admin.com", hashed_password=hashed_pw)
+                hashed_pw = get_password_hash(settings.admin_password)
+                admin_user = User(
+                    username=settings.admin_username,
+                    email=settings.admin_email,
+                    hashed_password=hashed_pw,
+                )
                 db.add(admin_user)
                 db.commit()
-                log_event("default_admin_created", username="admin", email="admin@admin.com")
+                log_event(
+                    "default_admin_created",
+                    username=settings.admin_username,
+                    email=settings.admin_email,
+                )
     except Exception as exc:
         log_error("admin_creation_failed", exc)
-
+        
     settings.ensure_output_dir()
     log_event(
         "app_startup",

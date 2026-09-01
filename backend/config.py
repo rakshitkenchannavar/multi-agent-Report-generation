@@ -85,6 +85,13 @@ class Settings(BaseSettings):
     tavily_api_key: Optional[str] = Field(default=None)
     serpapi_api_key: Optional[str] = Field(default=None)
     enable_web_search: bool = Field(default=False)
+    
+    # -------------------------------------------------------------------------
+    # Admin bootstrap
+    # -------------------------------------------------------------------------
+    admin_email: str = Field(default="admin@admin.com")
+    admin_password: str = Field(default="admin123")
+    admin_username: str = Field(default="admin")
 
     # -------------------------------------------------------------------------
     # Output
